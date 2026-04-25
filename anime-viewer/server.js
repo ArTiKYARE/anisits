@@ -163,26 +163,47 @@ async function parseAnimeDetails(id) {
 
         const $ = cheerio.load(response.data);
 
-        // Try to extract from SSR data first
-        const ssrData = extractSsrData(response.data);
+        // Try to extract from __staticRouterHydrationData first
         let anime = {};
-
-        if (ssrData) {
-            for (const key of Object.keys(ssrData)) {
-                if (key.includes('item') || key.includes('anime')) {
-                    const data = ssrData[key];
-                    if (Array.isArray(data) && data.length > 0) {
-                        anime = data[0] || {};
-                        break;
-                    } else if (typeof data === 'object' && data.title) {
-                        anime = data;
-                        break;
+        
+        $('script').each((i, el) => {
+            const content = $(el).html();
+            if (content && content.includes('__staticRouterHydrationData') && !anime.title) {
+                const jsonMatch = content.match(/JSON\.parse\(\s*"([\s\S]*?)"\s*\)/);
+                if (jsonMatch) {
+                    let jsonString = jsonMatch[1];
+                    
+                    // Unescape JSON string
+                    jsonString = jsonString.replace(/\\"/g, '"')
+                                          .replace(/\\\\/g, '\\')
+                                          .replace(/\\n/g, '\n')
+                                          .replace(/\\t/g, '\t')
+                                          .replace(/\\r/g, '\r')
+                                          .replace(/\\b/g, '\b')
+                                          .replace(/\\f/g, '\f')
+                                          .replace(/\\u([0-9a-fA-F]{4})/g, (m, p1) => String.fromCharCode(parseInt(p1, 16)))
+                                          .replace(/[\u0000-\u001F\u007F-\u009F]/g, '');
+                    
+                    try {
+                        const data = JSON.parse(jsonString);
+                        
+                        if (data.loaderData) {
+                            for (const key of Object.keys(data.loaderData)) {
+                                const value = data.loaderData[key];
+                                if (value && value.anime) {
+                                    anime = value.anime;
+                                    break;
+                                }
+                            }
+                        }
+                    } catch (e) {
+                        console.error('Error parsing hydration data:', e.message);
                     }
                 }
             }
-        }
+        });
 
-        // Fallback to HTML parsing if SSR data not available
+        // Fallback to HTML parsing if no data from hydration
         if (!anime.title) {
             anime.title = $('h1').first().text().trim();
             anime.description = $('.description, [class*="desc"], [class*="about"]').first().text().trim();
@@ -207,29 +228,52 @@ async function parseAnimeDetails(id) {
                 big: normalizePosterUrl(image),
                 fullsize: normalizePosterUrl(image)
             };
+        } else {
+            // Normalize poster if it's an object
+            if (anime.poster && typeof anime.poster === 'object') {
+                anime.poster = normalizePosters(anime.poster);
+            }
+            
+            // Normalize genres
+            if (Array.isArray(anime.genres)) {
+                anime.genres = anime.genres.map(g => ({
+                    id: g.id,
+                    name: g.name || g.title
+                }));
+            }
         }
 
         // Extract video players/episodes
         const videos = [];
-        const playerFrames = $('iframe[src*="player"], iframe[src*="video"], [class*="player"] iframe');
-        playerFrames.each((i, el) => {
-            const src = $(el).attr('src');
-            if (src) {
+        
+        // Check for videos in parsed data
+        if (anime.videos && Array.isArray(anime.videos)) {
+            anime.videos.forEach((v, i) => {
                 videos.push({
-                    iframe_url: src,
-                    episode: i + 1,
-                    title: `Серия ${i + 1}`
+                    iframe_url: v.iframe_url || v.url,
+                    episode: v.episode || i + 1,
+                    title: v.title || `Серия ${i + 1}`
                 });
-            }
-        });
+            });
+        }
+        
+        // Also check for iframes in HTML
+        if (videos.length === 0) {
+            const playerFrames = $('iframe[src*="player"], iframe[src*="video"], [class*="player"] iframe');
+            playerFrames.each((i, el) => {
+                const src = $(el).attr('src');
+                if (src) {
+                    videos.push({
+                        iframe_url: src,
+                        episode: i + 1,
+                        title: `Серия ${i + 1}`
+                    });
+                }
+            });
+        }
 
         if (videos.length > 0) {
             anime.videos = videos;
-        }
-
-        // Normalize poster
-        if (anime.poster) {
-            anime.poster = normalizePosters(anime.poster);
         }
 
         return { response: anime };
