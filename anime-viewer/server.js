@@ -15,22 +15,23 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // Helper function to extract JSON data from __ssr_data script tag
 function extractSsrData(html) {
-    // Look for var __ssr_data={...} pattern in the HTML
-    const match = html.match(/var\s+__ssr_data\s*=\s*(\{[\s\S]*?\});?\s*<\/script>/);
-    
+    // Look for __ssr_data={...} pattern
+    const match = html.match(/__ssr_data\s*=\s*(\{[\s\S]*?)(?=\)\s*;?\s*<\/script>|<\/script>)/);
+
     if (!match) {
         return null;
     }
+
+    let jsonString = match[1].trim();
     
-    let jsonString = match[1];
-    
+    // Remove trailing ); if present
+    jsonString = jsonString.replace(/\)\s*$/, '');
+
     try {
         return JSON.parse(jsonString);
     } catch (e) {
         console.error('Failed to parse SSR data:', e.message);
-        // Try to fix common JSON issues
         try {
-            // Remove trailing commas before closing brackets
             const cleaned = jsonString.replace(/,\s*([}\]])/g, '$1');
             return JSON.parse(cleaned);
         } catch (e2) {
@@ -66,58 +67,83 @@ function normalizePosters(posterObj) {
     return normalized;
 }
 
-// Parse anime list from catalog page
+// Parse anime list from catalog page using HTML scraping
 async function parseAnimeList(page = 1) {
     try {
         const response = await axios.get(`${BASE_URL}/catalog`, {
             params: { page },
             headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7'
             }
         });
-        
+
         const $ = cheerio.load(response.data);
         const animeList = [];
-        
-        $('.catalog-item, .anime-item, [class*="anime"], [class*="card"]').each((i, el) => {
-            const $el = $(el);
-            const title = $el.find('.title, [class*="title"]').first().text().trim();
-            const link = $el.find('a').first().attr('href');
-            const image = $el.find('img').first().attr('src') || $el.find('img').first().attr('data-src');
-            
-            if (title && link) {
-                animeList.push({
-                    id: link.split('/').pop(),
-                    title: title,
-                    url: link,
-                    poster: {
-                        small: normalizePosterUrl(image),
-                        medium: normalizePosterUrl(image),
-                        big: normalizePosterUrl(image)
-                    }
-                });
+
+        // Extract anime items from href links with catalog/item pattern
+        $('a[href^="/catalog/item"]').each((i, el) => {
+            const href = $(el).attr('href');
+            if (href && !animeList.find(a => a.url === href)) {
+                const id = href.split('/').pop();
+                const title = $(el).find('.title, [class*="title"], img[alt]').first().attr('alt') || 
+                              $(el).text().trim() || id;
+                const image = $(el).find('img').first().attr('src') || $(el).find('img').first().attr('data-src');
+                
+                if (id && id !== 'item') {
+                    animeList.push({
+                        id: id,
+                        title: title.replace(/^[^\w]/, '').trim() || id,
+                        url: href,
+                        poster: {
+                            small: normalizePosterUrl(image),
+                            medium: normalizePosterUrl(image),
+                            big: normalizePosterUrl(image)
+                        }
+                    });
+                }
             }
         });
-        
-        // If no items found with class selectors, try extracting from SSR data
+
+        // If no items found with link selectors, try extracting from SSR data
         if (animeList.length === 0) {
             const ssrData = extractSsrData(response.data);
-            if (ssrData && ssrData.props && ssrData.props.pageProps) {
-                const pageProps = ssrData.props.pageProps;
-                const items = pageProps.anime || pageProps.catalog || pageProps.items || [];
-                
-                items.forEach(item => {
-                    animeList.push({
-                        id: item.id || item.url?.split('/').pop(),
-                        title: item.title || item.name,
-                        url: item.url || `/catalog/${item.id}`,
-                        poster: normalizePosters(item.poster || item.image)
-                    });
-                });
+            if (ssrData) {
+                // Look for catalog data in SSR keys
+                for (const key of Object.keys(ssrData)) {
+                    if (key.includes('catalog') && Array.isArray(ssrData[key])) {
+                        const items = ssrData[key];
+                        // Handle nested structure like {response: [...], limit: 24}
+                        const actualItems = items[0]?.response || items[0]?.items || items;
+                        
+                        if (Array.isArray(actualItems)) {
+                            actualItems.forEach(item => {
+                                if (item.title || item.name) {
+                                    animeList.push({
+                                        id: item.anime_url || item.id || item.url?.split('/').pop(),
+                                        title: item.title || item.name,
+                                        url: item.url || `/catalog/${item.anime_url || item.id}`,
+                                        poster: normalizePosters(item.poster || item.image)
+                                    });
+                                }
+                            });
+                            break;
+                        }
+                    }
+                }
             }
         }
-        
-        return { response: animeList, total: animeList.length };
+
+        // Remove duplicates
+        const seen = new Set();
+        const uniqueList = animeList.filter(item => {
+            if (seen.has(item.id)) return false;
+            seen.add(item.id);
+            return true;
+        });
+
+        return { response: uniqueList, total: uniqueList.length };
     } catch (error) {
         console.error('Error parsing anime list:', error.message);
         throw error;
@@ -127,42 +153,54 @@ async function parseAnimeList(page = 1) {
 // Parse anime details from individual page
 async function parseAnimeDetails(id) {
     try {
-        const response = await axios.get(`${BASE_URL}/catalog/${id}`, {
+        const response = await axios.get(`${BASE_URL}/catalog/item/${id}`, {
             headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7'
             }
         });
-        
+
         const $ = cheerio.load(response.data);
-        
+
         // Try to extract from SSR data first
         const ssrData = extractSsrData(response.data);
         let anime = {};
-        
-        if (ssrData && ssrData.props && ssrData.props.pageProps) {
-            const pageProps = ssrData.props.pageProps;
-            anime = pageProps.anime || pageProps.item || {};
+
+        if (ssrData) {
+            for (const key of Object.keys(ssrData)) {
+                if (key.includes('item') || key.includes('anime')) {
+                    const data = ssrData[key];
+                    if (Array.isArray(data) && data.length > 0) {
+                        anime = data[0] || {};
+                        break;
+                    } else if (typeof data === 'object' && data.title) {
+                        anime = data;
+                        break;
+                    }
+                }
+            }
         }
-        
+
         // Fallback to HTML parsing if SSR data not available
         if (!anime.title) {
             anime.title = $('h1').first().text().trim();
             anime.description = $('.description, [class*="desc"], [class*="about"]').first().text().trim();
             anime.year = parseInt($('[class*="year"]').first().text()) || null;
             anime.status = $('[class*="status"]').first().text().trim();
-            
+
             const genres = [];
             $('[class*="genre"]').each((i, el) => {
                 const genre = $(el).text().trim();
                 if (genre) genres.push({ name: genre });
             });
             anime.genres = genres;
-            
+
             const image = $('img').filter((i, el) => {
                 const src = $(el).attr('src') || $(el).attr('data-src');
                 return src && (src.includes('poster') || src.includes('anime'));
             }).first().attr('src') || $('img').first().attr('src');
-            
+
             anime.poster = {
                 small: normalizePosterUrl(image),
                 medium: normalizePosterUrl(image),
@@ -170,7 +208,7 @@ async function parseAnimeDetails(id) {
                 fullsize: normalizePosterUrl(image)
             };
         }
-        
+
         // Extract video players/episodes
         const videos = [];
         const playerFrames = $('iframe[src*="player"], iframe[src*="video"], [class*="player"] iframe');
@@ -184,16 +222,16 @@ async function parseAnimeDetails(id) {
                 });
             }
         });
-        
+
         if (videos.length > 0) {
             anime.videos = videos;
         }
-        
+
         // Normalize poster
         if (anime.poster) {
             anime.poster = normalizePosters(anime.poster);
         }
-        
+
         return { response: anime };
     } catch (error) {
         console.error('Error parsing anime details:', error.message);
@@ -205,11 +243,9 @@ async function parseAnimeDetails(id) {
 app.get('/api/anime', async (req, res) => {
     try {
         const { limit = 20, offset = 0, page = 1 } = req.query;
-        
-        // Use web scraping to get anime list
+
         const data = await parseAnimeList(parseInt(page));
-        
-        // Apply limit and offset if needed
+
         let response = data.response;
         if (offset > 0) {
             response = response.slice(offset);
@@ -217,7 +253,7 @@ app.get('/api/anime', async (req, res) => {
         if (limit && response.length > limit) {
             response = response.slice(0, limit);
         }
-        
+
         res.json({ response, total: data.total });
     } catch (error) {
         console.error('Error fetching anime:', error.message);
@@ -228,10 +264,7 @@ app.get('/api/anime', async (req, res) => {
 app.get('/api/anime/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        
-        // Use web scraping to get anime details
         const data = await parseAnimeDetails(id);
-        
         res.json(data);
     } catch (error) {
         console.error('Error fetching anime details:', error.message);
@@ -241,17 +274,15 @@ app.get('/api/anime/:id', async (req, res) => {
 
 app.get('/api/anime/genres', async (req, res) => {
     try {
-        // Parse genres from catalog page
         const response = await axios.get(`${BASE_URL}/catalog`, {
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
             }
         });
-        
+
         const $ = cheerio.load(response.data);
         const genres = [];
-        
-        // Try to extract genres from filter/sidebar
+
         $('[class*="genre"], [class*="filter"] a').each((i, el) => {
             const name = $(el).text().trim();
             const href = $(el).attr('href');
@@ -259,8 +290,7 @@ app.get('/api/anime/genres', async (req, res) => {
                 genres.push({ id: i, name, url: href });
             }
         });
-        
-        // If no genres found, try SSR data
+
         if (genres.length === 0) {
             const ssrData = extractSsrData(response.data);
             if (ssrData && ssrData.props && ssrData.props.pageProps) {
@@ -271,7 +301,7 @@ app.get('/api/anime/genres', async (req, res) => {
                 });
             }
         }
-        
+
         res.json({ response: genres });
     } catch (error) {
         console.error('Error fetching genres:', error.message);
@@ -281,22 +311,20 @@ app.get('/api/anime/genres', async (req, res) => {
 
 app.get('/api/anime/schedule', async (req, res) => {
     try {
-        // Try to get schedule from main page or dedicated schedule page
         const response = await axios.get(`${BASE_URL}/`, {
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
             }
         });
-        
+
         const $ = cheerio.load(response.data);
         const schedule = [];
-        
-        // Look for schedule section
+
         $('[class*="schedule"], [class*="release"]').each((i, el) => {
             const $el = $(el);
             const title = $el.find('.title, [class*="title"]').first().text().trim();
             const time = $el.find('[class*="time"], [class*="date"]').first().text().trim();
-            
+
             if (title) {
                 schedule.push({
                     id: i,
@@ -305,8 +333,7 @@ app.get('/api/anime/schedule', async (req, res) => {
                 });
             }
         });
-        
-        // If no schedule found, try SSR data
+
         if (schedule.length === 0) {
             const ssrData = extractSsrData(response.data);
             if (ssrData && ssrData.props && ssrData.props.pageProps) {
@@ -321,7 +348,7 @@ app.get('/api/anime/schedule', async (req, res) => {
                 });
             }
         }
-        
+
         res.json({ response: schedule });
     } catch (error) {
         console.error('Error fetching schedule:', error.message);
@@ -331,22 +358,20 @@ app.get('/api/anime/schedule', async (req, res) => {
 
 app.get('/api/bloggers/video', async (req, res) => {
     try {
-        // Parse blogger videos from site
         const response = await axios.get(`${BASE_URL}/bloggers`, {
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
             }
         });
-        
+
         const $ = cheerio.load(response.data);
         const videos = [];
-        
-        // Try to extract video items
+
         $('[class*="video"], [class*="blogger"]').each((i, el) => {
             const $el = $(el);
             const title = $el.find('.title, [class*="title"]').first().text().trim();
             const thumbnail = $el.find('img').first().attr('src') || $el.find('img').first().attr('data-src');
-            
+
             if (title) {
                 videos.push({
                     id: i,
@@ -355,23 +380,28 @@ app.get('/api/bloggers/video', async (req, res) => {
                 });
             }
         });
-        
-        // If no videos found, try SSR data
+
         if (videos.length === 0) {
             const ssrData = extractSsrData(response.data);
-            if (ssrData && ssrData.props && ssrData.props.pageProps) {
-                const pageProps = ssrData.props.pageProps;
-                const videoList = pageProps.videos || pageProps.bloggers || [];
-                videoList.forEach((item, i) => {
-                    videos.push({
-                        id: item.id || i,
-                        title: item.title || item.name,
-                        thumbnail: normalizePosterUrl(item.thumbnail || item.image)
-                    });
-                });
+            if (ssrData) {
+                for (const key of Object.keys(ssrData)) {
+                    if (key.includes('bloggers') || key.includes('video')) {
+                        const videoList = ssrData[key];
+                        if (Array.isArray(videoList)) {
+                            videoList.forEach((item, i) => {
+                                videos.push({
+                                    id: item.id || i,
+                                    title: item.title || item.name,
+                                    thumbnail: normalizePosterUrl(item.thumbnail || item.image || item.previews?.small)
+                                });
+                            });
+                            break;
+                        }
+                    }
+                }
             }
         }
-        
+
         res.json({ response: videos });
     } catch (error) {
         console.error('Error fetching blogger videos:', error.message);
