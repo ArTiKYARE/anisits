@@ -61,11 +61,16 @@ app.get('/api/anime', async (req, res) => {
         
         // Normalize the response structure and poster URLs
         const data = response.data;
+        
+        // Handle both array and object responses
         if (data.response && Array.isArray(data.response)) {
             data.response = data.response.map(anime => ({
                 ...anime,
                 poster: normalizePosters(anime.poster)
             }));
+        } else if (data.response && typeof data.response === 'object') {
+            // Single anime object with lists_count etc - this is for single anime details
+            // Don't modify it
         }
         
         res.json(data);
