@@ -27,7 +27,7 @@ function normalizePosterUrl(url) {
 // Helper function to normalize all poster sizes in an object
 function normalizePosters(posterObj) {
     if (!posterObj) return {};
-    return {
+    const normalized = {
         fullsize: normalizePosterUrl(posterObj.fullsize),
         big: normalizePosterUrl(posterObj.big),
         small: normalizePosterUrl(posterObj.small),
@@ -35,6 +35,9 @@ function normalizePosters(posterObj) {
         huge: normalizePosterUrl(posterObj.huge),
         mega: normalizePosterUrl(posterObj.mega)
     };
+    // Debug logging
+    console.log('Normalized posters:', normalized);
+    return normalized;
 }
 
 // API Proxy endpoints

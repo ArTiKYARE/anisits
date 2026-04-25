@@ -1,11 +1,10 @@
 ```
-# Build artifacts
-dist/
-build/
-*.js
-
 # Dependencies
 node_modules/
+
+# Logs and temp files
+*.log
+*.tmp
 
 # Environment
 .env
@@ -16,22 +15,36 @@ node_modules/
 .vscode/
 .idea/
 
-# Logs and temp files
-*.log
-*.tmp
-*.swp
-
-# System files
-.DS_Store
-Thumbs.db
+# Build artifacts
+dist/
+build/
+target/
 
 # Python
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
+.Python
+env/
+venv/
+.venv/
+.ENV
+.venv.bak/
+pip-log.txt
+pip-selfcheck.json
 
-# Compressed files
+# Compiled and binary files
+*.o
+*.obj
+*.exe
+*.dll
+*.so
+*.a
+*.out
+*.class
+
+# Compression
 *.zip
 *.gz
 *.tar
@@ -50,8 +63,8 @@ __pycache__/
 *.Z
 *.lz
 *.lzo
-*.tar.gz
-*.tar.bz2
-*.tar.xz
-*.tar.zst
+
+# System files
+.DS_Store
+Thumbs.db
 ```
