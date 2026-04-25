@@ -603,8 +603,9 @@
                     fetchAPI('/anime/schedule')
                 ]);
 
-                const animeList = catalogData.response?.data || [];
-                const schedule = scheduleData.response || [];
+                // API returns {response: [...]} directly, not {response: {data: [...]}}
+                const animeList = Array.isArray(catalogData.response) ? catalogData.response : (catalogData.response?.data || []);
+                const schedule = Array.isArray(scheduleData.response) ? scheduleData.response : (scheduleData.response?.data || []);
 
                 main.innerHTML = `
                     <h2 class="section-title">🔥 Популярное сейчас</h2>
@@ -650,7 +651,8 @@
 
             try {
                 const data = await fetchAPI(`/anime?limit=${limit}&offset=${currentOffset}`);
-                const animeList = data.response?.data || [];
+                // API returns {response: [...]} directly, not {response: {data: [...]}}
+                const animeList = Array.isArray(data.response) ? data.response : (data.response?.data || []);
 
                 main.innerHTML = `
                     <h2 class="section-title">📚 Каталог аниме</h2>
@@ -668,7 +670,7 @@
                     </div>
                     <div id="catalogGrid"></div>
                     <div style="text-align: center; margin-top: 30px;">
-                        <button onclick="loadMore()" style="padding: 15px 40px; background: #f36d33; border: none; border-radius: 25px; color: #fff; font-size: 16px; cursor: pointer;">Загрузить ещё</button>
+                        <button onclick="loadMore()" style="padding: 15px 40px; background: var(--primary-color); border: none; border-radius: 6px; color: #fff; font-size: 14px; cursor: pointer; text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px;">Загрузить ещё</button>
                     </div>
                 `;
 
@@ -686,7 +688,8 @@
 
             try {
                 const data = await fetchAPI('/anime/schedule');
-                const schedule = data.response || [];
+                // API returns {response: [...]} directly, not {response: {data: [...]}}
+                const schedule = Array.isArray(data.response) ? data.response : (data.response?.data || []);
 
                 main.innerHTML = `
                     <h2 class="section-title">📅 Расписание выхода эпизодов</h2>
@@ -697,9 +700,12 @@
                 if (schedule && schedule.length > 0) {
                     scheduleGrid.innerHTML = `
                         <div class="anime-grid">
-                            ${schedule.map(anime => `
+                            ${schedule.map(anime => {
+                                const posterUrl = anime.poster?.medium || anime.poster?.big || anime.poster?.fullsize || '';
+                                const normalizedPoster = posterUrl.startsWith('//') ? 'https:' + posterUrl : (posterUrl || 'https://via.placeholder.com/200x280');
+                                return `
                                 <div class="anime-card" onclick="showAnimeDetails(${anime.anime_id})">
-                                    <img src="${anime.poster?.medium || 'https://via.placeholder.com/200x280'}" alt="${anime.title}">
+                                    <img src="${normalizedPoster}" alt="${anime.title}" onerror="this.src='https://via.placeholder.com/200x280'">
                                     <div class="anime-card-info">
                                         <div class="anime-card-title">${anime.title}</div>
                                         <div class="anime-card-meta">
@@ -708,7 +714,7 @@
                                         </div>
                                     </div>
                                 </div>
-                            `).join('')}
+                            `}).join('')}
                         </div>
                     `;
                 } else {
@@ -787,7 +793,8 @@
 
             try {
                 const data = await fetchAPI(`/anime?search=${encodeURIComponent(query)}&limit=20`);
-                const animeList = data.response?.data || [];
+                // API returns {response: [...]} directly, not {response: {data: [...]}}
+                const animeList = Array.isArray(data.response) ? data.response : (data.response?.data || []);
 
                 main.innerHTML = `
                     <h2 class="section-title">🔍 Результаты поиска: "${query}"</h2>
@@ -958,7 +965,8 @@
             main.innerHTML = '<div class="loading">Фильтрация...</div>';
             
             fetchAPI(`/anime?genre=${genreId}&limit=${limit}`).then(data => {
-                const animeList = data.response?.data || [];
+                // API returns {response: [...]} directly, not {response: {data: [...]}}
+                const animeList = Array.isArray(data.response) ? data.response : (data.response?.data || []);
                 main.innerHTML = `
                     <h2 class="section-title">Жанр: ${genreId}</h2>
                     <div id="filteredGrid"></div>
@@ -979,7 +987,8 @@
             main.innerHTML = '<div class="loading">Фильтрация...</div>';
             
             fetchAPI(`/anime?year=${year}&limit=${limit}`).then(data => {
-                const animeList = data.response?.data || [];
+                // API returns {response: [...]} directly, not {response: {data: [...]}}
+                const animeList = Array.isArray(data.response) ? data.response : (data.response?.data || []);
                 main.innerHTML = `
                     <h2 class="section-title">Год: ${year}</h2>
                     <div id="filteredGrid"></div>
