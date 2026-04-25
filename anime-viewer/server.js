@@ -5,12 +5,37 @@ const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const API_BASE_URL = 'https://api.yani.tv';
+const API_BASE_URL = 'https://ru.yummyani.me/api';
 
 // Middleware
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
+
+// Helper function to normalize poster URLs
+function normalizePosterUrl(url) {
+    if (!url) return '';
+    if (url.startsWith('//')) {
+        return 'https:' + url;
+    }
+    if (!url.startsWith('http')) {
+        return 'https://ru.yummyani.me' + url;
+    }
+    return url;
+}
+
+// Helper function to normalize all poster sizes in an object
+function normalizePosters(posterObj) {
+    if (!posterObj) return {};
+    return {
+        fullsize: normalizePosterUrl(posterObj.fullsize),
+        big: normalizePosterUrl(posterObj.big),
+        small: normalizePosterUrl(posterObj.small),
+        medium: normalizePosterUrl(posterObj.medium),
+        huge: normalizePosterUrl(posterObj.huge),
+        mega: normalizePosterUrl(posterObj.mega)
+    };
+}
 
 // API Proxy endpoints
 app.get('/api/anime', async (req, res) => {
@@ -26,11 +51,21 @@ app.get('/api/anime', async (req, res) => {
         const response = await axios.get(`${API_BASE_URL}/anime`, {
             params,
             headers: {
-                'Accept': 'image/avif,image/webp',
-                'X-Application': 'web-viewer'
+                'Accept': 'application/json',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
             }
         });
-        res.json(response.data);
+        
+        // Normalize the response structure and poster URLs
+        const data = response.data;
+        if (data.response && Array.isArray(data.response)) {
+            data.response = data.response.map(anime => ({
+                ...anime,
+                poster: normalizePosters(anime.poster)
+            }));
+        }
+        
+        res.json(data);
     } catch (error) {
         console.error('Error fetching anime:', error.message);
         res.status(500).json({ error: 'Failed to fetch anime' });
@@ -42,11 +77,30 @@ app.get('/api/anime/:id', async (req, res) => {
         const { id } = req.params;
         const response = await axios.get(`${API_BASE_URL}/anime/${id}`, {
             headers: {
-                'Accept': 'image/avif,image/webp',
-                'X-Application': 'web-viewer'
+                'Accept': 'application/json',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
             }
         });
-        res.json(response.data);
+        
+        // Normalize the response and add video players
+        const data = response.data;
+        if (data.response) {
+            data.response.poster = normalizePosters(data.response.poster);
+            
+            // Add viewing order as videos if available
+            if (data.response.viewing_order && Array.isArray(data.response.viewing_order)) {
+                data.response.videos = data.response.viewing_order.map((item, index) => ({
+                    iframe_url: `https://ru.yummyani.me/catalog/${item.anime_url}`,
+                    title: item.title,
+                    episode: index + 1,
+                    data: {
+                        dubbing: item.translates?.[0]?.title || 'Озвучка'
+                    }
+                }));
+            }
+        }
+        
+        res.json(data);
     } catch (error) {
         console.error('Error fetching anime details:', error.message);
         res.status(500).json({ error: 'Failed to fetch anime details' });
@@ -57,8 +111,8 @@ app.get('/api/anime/genres', async (req, res) => {
     try {
         const response = await axios.get(`${API_BASE_URL}/anime/genres`, {
             headers: {
-                'Accept': 'image/avif,image/webp',
-                'X-Application': 'web-viewer'
+                'Accept': 'application/json',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
             }
         });
         res.json(response.data);
@@ -72,11 +126,21 @@ app.get('/api/anime/schedule', async (req, res) => {
     try {
         const response = await axios.get(`${API_BASE_URL}/anime/schedule`, {
             headers: {
-                'Accept': 'image/avif,image/webp',
-                'X-Application': 'web-viewer'
+                'Accept': 'application/json',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
             }
         });
-        res.json(response.data);
+        
+        // Normalize poster URLs in schedule
+        const data = response.data;
+        if (data.response && Array.isArray(data.response)) {
+            data.response = data.response.map(anime => ({
+                ...anime,
+                poster: normalizePosters(anime.poster)
+            }));
+        }
+        
+        res.json(data);
     } catch (error) {
         console.error('Error fetching schedule:', error.message);
         res.status(500).json({ error: 'Failed to fetch schedule' });
@@ -89,8 +153,8 @@ app.get('/api/bloggers/video', async (req, res) => {
         const response = await axios.get(`${API_BASE_URL}/bloggers/video`, {
             params: { limit, offset, category },
             headers: {
-                'Accept': 'image/avif,image/webp',
-                'X-Application': 'web-viewer'
+                'Accept': 'application/json',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
             }
         });
         res.json(response.data);

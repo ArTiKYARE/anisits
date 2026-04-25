@@ -264,10 +264,51 @@
 
         .video-player {
             width: 100%;
-            height: 500px;
+            height: 0;
+            padding-bottom: 56.25%; /* 16:9 aspect ratio */
             background: #000;
             border-radius: 10px;
             margin-top: 30px;
+            position: relative;
+        }
+        
+        .video-player iframe {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+        
+        .video-title {
+            color: #f36d33;
+            font-size: 18px;
+            margin-bottom: 10px;
+            font-weight: 600;
+        }
+        
+        .episode-selector {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        
+        .episode-btn {
+            padding: 10px 20px;
+            background: rgba(243, 109, 51, 0.2);
+            border: 2px solid #f36d33;
+            border-radius: 20px;
+            color: #fff;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: 600;
+        }
+        
+        .episode-btn:hover, .episode-btn.active {
+            background: #f36d33;
+            transform: translateY(-2px);
         }
 
         .episodes-list {
@@ -653,6 +694,8 @@
             }
         }
 
+        let currentVideos = [];
+        
         async function showAnimeDetails(id) {
             const modal = document.getElementById('animeModal');
             modal.style.display = 'block';
@@ -685,41 +728,64 @@
 
                 document.getElementById('modalDescription').innerHTML = anime.description || 'Описание отсутствует';
 
-                // Episodes list
+                // Store videos globally for easy access
+                currentVideos = anime.videos || [];
+
+                // Episodes list with better UI
                 const episodesContainer = document.getElementById('episodesList');
-                if (anime.videos && anime.videos.length > 0) {
+                if (currentVideos.length > 0) {
                     episodesContainer.innerHTML = `
                         <h3 style="margin-bottom: 20px; color: #f36d33;">Эпизоды</h3>
-                        ${anime.videos.map((video, index) => `
-                            <div class="episode-item" onclick="playEpisode('${video.iframe_url || ''}', ${index + 1})">
-                                <div class="episode-number">${index + 1}</div>
-                                <div>
-                                    <div style="font-weight: 600;">Эпизод ${index + 1}</div>
-                                    <div style="font-size: 13px; color: rgba(255,255,255,0.7);">${video.data?.dubbing || 'Озвучка'}</div>
+                        <div class="episode-selector">
+                            ${currentVideos.map((video, index) => `
+                                <button class="episode-btn ${index === 0 ? 'active' : ''}" 
+                                        onclick="playEpisode('${video.iframe_url || ''}', ${index + 1}, this)">
+                                    ${index + 1}
+                                </button>
+                            `).join('')}
+                        </div>
+                        <div id="episodesDetailedList">
+                            ${currentVideos.map((video, index) => `
+                                <div class="episode-item" onclick="playEpisode('${video.iframe_url || ''}', ${index + 1})">
+                                    <div class="episode-number">${index + 1}</div>
+                                    <div>
+                                        <div style="font-weight: 600;">${video.title || 'Эпизод ' + (index + 1)}</div>
+                                        <div style="font-size: 13px; color: rgba(255,255,255,0.7);">${video.data?.dubbing || 'Озвучка'}</div>
+                                    </div>
                                 </div>
-                            </div>
-                        `).join('')}
+                            `).join('')}
+                        </div>
                     `;
                 } else {
-                    episodesContainer.innerHTML = '';
+                    episodesContainer.innerHTML = '<div class="error" style="padding: 20px;">Видео временно недоступно</div>';
                 }
 
                 // Auto play first episode if available
-                if (anime.videos && anime.videos.length > 0) {
-                    playEpisode(anime.videos[0].iframe_url || '', 1);
+                if (currentVideos.length > 0) {
+                    playEpisode(currentVideos[0].iframe_url || '', 1);
                 }
 
             } catch (error) {
+                console.error('Error loading anime details:', error);
                 modalBody.innerHTML = '<div class="error">Ошибка загрузки информации об аниме</div>';
             }
         }
 
-        function playEpisode(url, episodeNumber) {
+        function playEpisode(url, episodeNumber, btnElement = null) {
             const container = document.getElementById('videoPlayerContainer');
+            
+            // Update active button state
+            if (btnElement) {
+                document.querySelectorAll('.episode-btn').forEach(btn => btn.classList.remove('active'));
+                btnElement.classList.add('active');
+            }
+            
             if (url) {
                 container.innerHTML = `
-                    <h3 style="margin-bottom: 15px; color: #f36d33;">Смотреть эпизод ${episodeNumber}</h3>
-                    <iframe class="video-player" src="${url}" frameborder="0" allowfullscreen></iframe>
+                    <div class="video-title">Смотреть эпизод ${episodeNumber}</div>
+                    <div class="video-player">
+                        <iframe src="${url}" frameborder="0" allowfullscreen allow="autoplay; fullscreen"></iframe>
+                    </div>
                 `;
             } else {
                 container.innerHTML = '<div class="error">Видео недоступно</div>';
@@ -734,7 +800,12 @@
             const modalBody = document.querySelector('.modal-body');
             modalBody.innerHTML = `
                 <h1 class="modal-title">${title}</h1>
-                ${url ? `<iframe class="video-player" src="${url}" frameborder="0" allowfullscreen></iframe>` : '<div class="error">Видео недоступно</div>'}
+                ${url ? `
+                    <div class="video-title">${title}</div>
+                    <div class="video-player">
+                        <iframe src="${url}" frameborder="0" allowfullscreen allow="autoplay; fullscreen"></iframe>
+                    </div>
+                ` : '<div class="error">Видео недоступно</div>'}
             `;
         }
 
