@@ -2,34 +2,21 @@
 # Dependencies
 node_modules/
 
-# Logs
+# Logs and temp files
 *.log
-server.log
+*.tmp
 
-# Environment variables
+# Environment
 .env
 .env.local
 *.env.*
 
-# Package lock file
-package-lock.json
-
-# Build outputs
-dist/
-build/
-target/
-
-# IDE files
+# Editors
 .vscode/
 .idea/
 
-# Python artifacts (if any Python files exist in the project)
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-
-# OS generated files
-.DS_Store
-Thumbs.db
+# Build artifacts
+dist/
+build/
+*.js.map
 ```
