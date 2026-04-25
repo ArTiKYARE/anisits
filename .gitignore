@@ -1,0 +1,35 @@
+```
+# Dependencies
+node_modules/
+
+# Logs
+*.log
+server.log
+
+# Environment variables
+.env
+.env.local
+*.env.*
+
+# Package lock file
+package-lock.json
+
+# Build outputs
+dist/
+build/
+target/
+
+# IDE files
+.vscode/
+.idea/
+
+# Python artifacts (if any Python files exist in the project)
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# OS generated files
+.DS_Store
+Thumbs.db
+```
